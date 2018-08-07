@@ -34,9 +34,16 @@ class App extends Component {
       onPress={() => rnToastAndroid.readrfid()}
       style={styles.containerStyle}
       >
-        <Text>Read</Text>
+        <Text>读取RFID</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+      onPress={() => rnToastAndroid.readrfid()}
+      style={styles.containerStyle}
+      >
+        <Text>取消MAP</Text>
       </TouchableOpacity>
       <Text>{this.state.obj.RFID}</Text>
+      
     </View>
   );
  }

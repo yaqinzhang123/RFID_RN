@@ -2,7 +2,11 @@ package com.rfidreader;
 
 import android.app.Activity;
 import android.app.Application;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.ContextWrapper;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.os.Bundle;
@@ -11,6 +15,7 @@ import android.os.Looper;
 import android.os.Message;
 import android.support.annotation.NonNull;
 import android.util.Log;
+import android.view.KeyEvent;
 import android.widget.Toast;
 
 import com.BRMicro.Tools;
@@ -26,6 +31,7 @@ import com.facebook.react.bridge.WritableNativeMap;
 
 import java.io.IOException;
 import java.lang.ref.WeakReference;
+import java.sql.Time;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -33,6 +39,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.ListIterator;
+import java.util.Map;
 
 import com.handheld.uhfr.UHFRManager;
 import com.uhf.api.cls.Reader;
@@ -50,7 +57,7 @@ public class RNToastModule extends ReactContextBaseJavaModule {
     private boolean keyControl = true;
     private boolean isStart = false;
     private boolean isRunning = false;
-    private boolean isMulti = true;// multi mode flag
+    private boolean isMulti = false;// multi mode flag
     private SharedPreferences mSharedPreferences;
 
     public RNToastModule(final ReactApplicationContext reactContext) {
@@ -59,8 +66,10 @@ public class RNToastModule extends ReactContextBaseJavaModule {
         Util.initSoundPool(reactContext);
         mSharedPreferences = reactContext.getSharedPreferences("UHF",MODE_PRIVATE);
         this.mUhfrManager = UHFRManager.getIntance();
-        mUhfrManager.setPower(mSharedPreferences.getInt("readPower",30), mSharedPreferences.getInt("writePower",30));//set uhf module power
-        mUhfrManager.setRegion(Reader.Region_Conf.valueOf(mSharedPreferences.getInt("freRegion",1)));
+        if(mUhfrManager != null) {
+            mUhfrManager.setPower(mSharedPreferences.getInt("readPower", 30), mSharedPreferences.getInt("writePower", 30));//set uhf module power
+            mUhfrManager.setRegion(Reader.Region_Conf.valueOf(mSharedPreferences.getInt("freRegion", 1)));
+        }
      //   Toast.makeText(getReactApplicationContext(),"FreRegion:"+Reader.Region_Conf.valueOf(mSharedPreferences.getInt("freRegion",1))+
        //         "\n"+"Read Power:"+mSharedPreferences.getInt("readPower",30)+
          //       "\n"+"Write Power:"+mSharedPreferences.getInt("writePower",30),Toast.LENGTH_LONG).show();
@@ -69,7 +78,9 @@ public class RNToastModule extends ReactContextBaseJavaModule {
             Toast.makeText(getReactApplicationContext(), e.toString(), Toast.LENGTH_LONG).show();
 
         }
-
+        IntentFilter filter = new IntentFilter() ;
+        filter.addAction("android.rfid.FUN_KEY");
+        reactContext.registerReceiver(keyReceiver, filter) ;
     }
 
 
@@ -79,61 +90,71 @@ public class RNToastModule extends ReactContextBaseJavaModule {
     }
 //读取时间太久，List一个值。
     @ReactMethod
-    public void readrfid(){
-       // mSharedPreferences = reactContext.getSharedPreferences("UHF",MODE_PRIVATE);
+    public void readrfid() {
+        // mSharedPreferences = reactContext.getSharedPreferences("UHF",MODE_PRIVATE);\
         if (mUhfrManager == null) {
             mUhfrManager = UHFRManager.getIntance();
-         }
-         if(mUhfrManager != null){
-         Log.e("eee","init success!");
-         mUhfrManager.setPower(mSharedPreferences.getInt("readPower",20), mSharedPreferences.getInt("writePower",20));//t uhf module power
-         mUhfrManager.setRegion(Reader.Region_Conf.valueOf(mSharedPreferences.getInt("freRegion",1)));
-         mUhfrManager.setCancleFastMode();
-         int iCount = 0;
-         //String m_Rfid = "";
-         List<Reader.TAGINFO> epcList;
-         Tag_Data tag_data=new Tag_Data("","","");
-         ArrayList<Tag_Data> strList=new ArrayList<Tag_Data>();
+        }
+        if (mUhfrManager != null) {
+//             Log.e("eee", "init success!");
+//             mUhfrManager.setPower(mSharedPreferences.getInt("readPower", 30), mSharedPreferences.getInt("writePower", 30));//t uhf module power
+//             mUhfrManager.setRegion(Reader.Region_Conf.valueOf(mSharedPreferences.getInt("freRegion", 1)));
+            mUhfrManager.setCancleFastMode();
+            isRunning = true;
 
-            while(iCount<200){
-                Log.e("eee","running!"+iCount);
-                 try {
-                     Thread.sleep(250);
-                 } catch (InterruptedException e) {
-                     e.printStackTrace();
-                 }
-                    epcList = mUhfrManager.tagInventoryByTimer((short)50);
-                    if (epcList != null&& epcList.size()>0) {
-                        for (Reader.TAGINFO tfs:epcList) {
+            //  mUhfrManager.setFastMode();
+            int iCount = 0;
+            // new Thread(inventoryTask).start();
+            int i = 0;
+            List<Reader.TAGINFO> epcList;
+            Map<String, Tag_Data> strList = new HashMap<String, Tag_Data>();
+            if (iCount < 50) {
+                while (isRunning) {
+//                    Log.e("eee", "running!" + iCount);
+//                    try {
+//                        Thread.sleep(250);
+//                    } catch (InterruptedException e) {
+//                        e.printStackTrace();
+//                    }
+                    //epcList = mUhfrManager.tagInventoryRealTime();
+                    epcList = mUhfrManager.tagInventoryByTimer((short) 50);
+                    if (epcList != null && epcList.size() > 0) {
+                        for (Reader.TAGINFO tfs : epcList) {
+                            i++;
                             byte[] epcdata = tfs.EpcId;
                             String epc = Tools.Bytes2HexString(epcdata, epcdata.length);
                             int rssi = tfs.RSSI;
-                            tag_data.epc=epc;
-                            tag_data.rssi=String.valueOf(rssi);
-                            if(strList.contains(tag_data)){
+                            Tag_Data tag_data = new Tag_Data(String.valueOf(i), epc, String.valueOf(rssi));
+                            if (strList.containsKey(epc)) {
                                 continue;
                             }
-                            strList.add(tag_data);
-                            iCount=200;
+                            strList.put(epc, tag_data);
+                        }
+                        Util.play(1, 0);
+//                     JSONObject arr = (JSONObject) JSONObject.toJSON(strList);
+//                     WritableMap wm = new WritableNativeMap();
+//                     wm.putString("RFID", arr.toJSONString());
+//                     new DyEvent().sendEvent(getReactApplicationContext(), "EventName", wm);
+                        // iCount=200;
+                        iCount++;
+                        if (iCount == 50) {
+                            isRunning = false;
                             break;
                         }
-                       // Util.play(1, 0);
-                        JSONArray arr = (JSONArray) JSONArray.toJSON(strList);
-                        WritableMap wm = new WritableNativeMap();
-                        wm.putString("RFID", arr.toJSONString());
-                        new DyEvent().sendEvent(getReactApplicationContext(), "EventName", wm);
                     }
-                iCount = iCount+1;
                 }
-                mUhfrManager.stopTagInventory();
-                mUhfrManager.close();
-                mUhfrManager = null;
-                Log.e("eee","close!");
-                //OperRegister();
-            }else{
-                //ShowDialog("错误信息","初始化签标（RFID）读取器失败。",2);
+                JSONObject arr = (JSONObject) JSONObject.toJSON(strList);
+                WritableMap wm = new WritableNativeMap();
+                wm.putString("RFID", arr.toJSONString());
+                new DyEvent().sendEvent(getReactApplicationContext(), "EventName", wm);
+                // iCount++;
             }
-
+            mUhfrManager.stopTagInventory();
+            mUhfrManager.close();
+            mUhfrManager = null;
+            Log.e("eee", "close!");
+            //OperRegister();
+        }
     }
     @ReactMethod
     public void read() {
@@ -164,6 +185,7 @@ public class RNToastModule extends ReactContextBaseJavaModule {
                     mUhfrManager.asyncStopReading();
                 } else {
                     mUhfrManager.stopTagInventory();
+                    mUhfrManager.close();
                 }
                 try {
                     Thread.sleep(100);
@@ -183,24 +205,73 @@ public class RNToastModule extends ReactContextBaseJavaModule {
         @Override
         public void run() {
             while (isRunning) {
-                 if (isStart) {
+                     int i=0;
                      List<Reader.TAGINFO> list1;
-                    if (isMulti) { // multi mode
-                        list1 = mUhfrManager.tagInventoryRealTime();
-                    } else {
+                     Map<String,Tag_Data> strList=new HashMap<String,Tag_Data>();
+                    //if (isMulti) { // multi mode
+                     //   list1 = mUhfrManager.tagInventoryRealTime();
+                  //  } else {
                         list1 = mUhfrManager.tagInventoryByTimer((short) 50);
-                    }
+                  //  }
                     if (list1 != null && list1.size() > 0) {
-                        JSONArray arr = (JSONArray) JSONArray.toJSON(list1);
-                        WritableMap wm = new WritableNativeMap();
-                        wm.putString("RFID", arr.toJSONString());
-                        new DyEvent().sendEvent(getReactApplicationContext(), "EventName", wm);
+                        for (Reader.TAGINFO tfs:list1) {
+                            i++;
+                            byte[] epcdata = tfs.EpcId;
+                            String epc = Tools.Bytes2HexString(epcdata, epcdata.length);
+                            int rssi = tfs.RSSI;
+                            Tag_Data tag_data=new Tag_Data(String.valueOf(i),epc,String.valueOf(rssi));
+                            if(strList.containsKey(epc)){
+                                continue;
+                            }
+                            strList.put(epc,tag_data);
                     }
-                }
+                        Util.play(1, 0);
+                            JSONObject obj = (JSONObject) JSONObject.toJSON(strList);
+                            WritableMap wm = new WritableNativeMap();
+                            wm.putString("RFID", obj.toJSONString());
+                            new DyEvent().sendEvent(getReactApplicationContext(), "EventName", wm);
 
+                        }
             }
-        }
+            }
+
+
     };
+    //private boolean f1hidden = false;
+    //key receiver
+    private  long startTime = 0 ;
+    private boolean keyUpFalg= true;
+    private BroadcastReceiver keyReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+        //    if (f1hidden) return;
+            int keyCode = intent.getIntExtra("keyCode", 0) ;
+            if(keyCode == 0){//H941
+                keyCode = intent.getIntExtra("keycode", 0) ;
+            }
+//            Log.e("key ","keyCode = " + keyCode) ;
+            boolean keyDown = intent.getBooleanExtra("keydown", false) ;
+//			Log.e("key ", "down = " + keyDown);
+            if(keyUpFalg&&keyDown && System.currentTimeMillis() - startTime > 500){
+                keyUpFalg = false;
+                startTime = System.currentTimeMillis() ;
+                if ( (keyCode == KeyEvent.KEYCODE_F1 || keyCode == KeyEvent.KEYCODE_F2
+                        || keyCode == KeyEvent.KEYCODE_F3 || keyCode == KeyEvent.KEYCODE_F4 ||
+                        keyCode == KeyEvent.KEYCODE_F5)) {
+//                Log.e("key ","inventory.... " ) ;
+                    readrfid();
+                }
+                return ;
+            }else if (keyDown){
+                startTime = System.currentTimeMillis() ;
+            }else {
+                keyUpFalg = true;
+            }
+
+        }
+    } ;
+
+
 }
 
 
